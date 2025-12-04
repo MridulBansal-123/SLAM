@@ -7,8 +7,13 @@ import torchvision.transforms as transforms
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import io
-
+import cv2
+import tempfile
+import os
+print(f"CUDA Available: {torch.cuda.is_available()}")
+print(f"GPU Name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None'}")
 # ==================== MODEL DEFINITION ====================
 
 class UpSample(nn.Sequential):
@@ -130,6 +135,145 @@ def create_depth_visualization(depth_map, colormap='magma'):
     return buf
 
 
+def create_depth_frame(depth_map, colormap='magma'):
+    """Create a colored depth frame for video (returns numpy array)"""
+    # Normalize depth map to 0-1 range
+    depth_normalized = (depth_map - depth_map.min()) / (depth_map.max() - depth_map.min() + 1e-8)
+    
+    # Apply colormap
+    cmap = cm.get_cmap(colormap)
+    depth_colored = cmap(depth_normalized)
+    
+    # Convert to BGR for OpenCV (remove alpha channel and convert RGB to BGR)
+    depth_bgr = (depth_colored[:, :, :3] * 255).astype(np.uint8)
+    depth_bgr = cv2.cvtColor(depth_bgr, cv2.COLOR_RGB2BGR)
+    
+    return depth_bgr
+
+
+def process_video(model, device, video_path, colormap='magma', progress_bar=None, status_text=None):
+    """Process video and generate depth estimation for each frame"""
+    cap = cv2.VideoCapture(video_path)
+    
+    if not cap.isOpened():
+        return None, "Failed to open video file"
+    
+    # Get video properties
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    # Create temporary output file
+    temp_output = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+    temp_output_path = temp_output.name
+    temp_output.close()
+    
+    # Initialize video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(temp_output_path, fourcc, fps, (frame_width, frame_height))
+    
+    # Process each frame
+    frame_count = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # Convert BGR to RGB and then to PIL Image
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(frame_rgb)
+        
+        # Preprocess and predict
+        input_tensor, original_size = preprocess_image(pil_image)
+        depth_map = predict_depth(model, device, input_tensor, original_size)
+        
+        # Create depth visualization frame
+        depth_frame = create_depth_frame(depth_map, colormap)
+        
+        # Resize depth frame to match original video dimensions
+        depth_frame_resized = cv2.resize(depth_frame, (frame_width, frame_height))
+        
+        # Write frame
+        out.write(depth_frame_resized)
+        
+        frame_count += 1
+        
+        # Update progress
+        if progress_bar is not None:
+            progress_bar.progress(frame_count / total_frames)
+        if status_text is not None:
+            status_text.text(f"Processing frame {frame_count}/{total_frames}")
+    
+    cap.release()
+    out.release()
+    
+    return temp_output_path, None
+
+
+def process_video_side_by_side(model, device, video_path, colormap='magma', progress_bar=None, status_text=None):
+    """Process video and generate side-by-side comparison (original + depth)"""
+    cap = cv2.VideoCapture(video_path)
+    
+    if not cap.isOpened():
+        return None, "Failed to open video file"
+    
+    # Get video properties
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    # Create temporary output file
+    temp_output = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+    temp_output_path = temp_output.name
+    temp_output.close()
+    
+    # Initialize video writer (double width for side-by-side)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(temp_output_path, fourcc, fps, (frame_width * 2, frame_height))
+    
+    # Process each frame
+    frame_count = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # Convert BGR to RGB and then to PIL Image
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(frame_rgb)
+        
+        # Preprocess and predict
+        input_tensor, original_size = preprocess_image(pil_image)
+        depth_map = predict_depth(model, device, input_tensor, original_size)
+        
+        # Create depth visualization frame
+        depth_frame = create_depth_frame(depth_map, colormap)
+        
+        # Resize depth frame to match original video dimensions
+        depth_frame_resized = cv2.resize(depth_frame, (frame_width, frame_height))
+        
+        # Create side-by-side frame
+        combined_frame = np.hstack([frame, depth_frame_resized])
+        
+        # Write frame
+        out.write(combined_frame)
+        
+        frame_count += 1
+        
+        # Update progress
+        if progress_bar is not None:
+            progress_bar.progress(frame_count / total_frames)
+        if status_text is not None:
+            status_text.text(f"Processing frame {frame_count}/{total_frames}")
+    
+    cap.release()
+    out.release()
+    
+    return temp_output_path, None
+
+
 # ==================== STREAMLIT APP ====================
 
 def main():
@@ -164,7 +308,7 @@ def main():
     st.sidebar.info(f"🖥️ Device: {device}")
     
     # Main content
-    tab1, tab2, tab3 = st.tabs(["📷 Sample Images", "📤 Upload Image", "ℹ️ About"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📷 Sample Images", "📤 Upload Image", "🎬 Upload Video", "ℹ️ About"])
     
     with tab1:
         st.header("Sample Images Depth Estimation")
@@ -257,6 +401,101 @@ def main():
                             st.metric("Mean Depth", f"{depth_map.mean():.2f} m")
     
     with tab3:
+        st.header("🎬 Upload Video for Depth Estimation")
+        
+        uploaded_video = st.file_uploader(
+            "Choose a video file...",
+            type=['mp4', 'avi', 'mov', 'mkv'],
+            help="Upload a video file for depth estimation"
+        )
+        
+        if uploaded_video is not None:
+            # Save uploaded video to temporary file
+            temp_input = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            temp_input.write(uploaded_video.read())
+            temp_input_path = temp_input.name
+            temp_input.close()
+            
+            # Display original video
+            st.subheader("Original Video")
+            st.video(uploaded_video)
+            
+            # Get video info
+            cap = cv2.VideoCapture(temp_input_path)
+            fps = int(cap.get(cv2.CAP_PROP_FPS))
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = total_frames / fps if fps > 0 else 0
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap.release()
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Duration", f"{duration:.1f}s")
+            with col2:
+                st.metric("FPS", f"{fps}")
+            with col3:
+                st.metric("Frames", f"{total_frames}")
+            with col4:
+                st.metric("Resolution", f"{width}x{height}")
+            
+            # Processing options
+            st.subheader("Processing Options")
+            output_mode = st.radio(
+                "Output Mode",
+                ["Depth Only", "Side-by-Side (Original + Depth)"],
+                horizontal=True
+            )
+            
+            if st.button("🚀 Process Video", key="btn_video"):
+                st.subheader("Processing...")
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                with st.spinner("Processing video frames with GPU..."):
+                    if output_mode == "Depth Only":
+                        output_path, error = process_video(
+                            model, device, temp_input_path, colormap,
+                            progress_bar, status_text
+                        )
+                    else:
+                        output_path, error = process_video_side_by_side(
+                            model, device, temp_input_path, colormap,
+                            progress_bar, status_text
+                        )
+                
+                if error:
+                    st.error(f"❌ Error: {error}")
+                else:
+                    st.success("✅ Video processing complete!")
+                    status_text.text("Done!")
+                    
+                    # Display processed video
+                    st.subheader("Depth Estimation Video")
+                    
+                    # Read the output video for display
+                    with open(output_path, 'rb') as f:
+                        video_bytes = f.read()
+                    st.video(video_bytes)
+                    
+                    # Download button
+                    st.download_button(
+                        label="📥 Download Processed Video",
+                        data=video_bytes,
+                        file_name="depth_estimation_output.mp4",
+                        mime="video/mp4"
+                    )
+                    
+                    # Cleanup
+                    os.unlink(output_path)
+            
+            # Cleanup input temp file
+            try:
+                os.unlink(temp_input_path)
+            except:
+                pass
+    
+    with tab4:
         st.header("About This Application")
         st.markdown("""
         ### Model Architecture
