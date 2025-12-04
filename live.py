@@ -7,8 +7,12 @@ import torchvision.transforms as transforms
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import io
 import cv2
+import tempfile
+import os
+import time
 
 print(f"CUDA Available: {torch.cuda.is_available()}")
 print(f"GPU Name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None'}")
@@ -118,6 +122,145 @@ def predict_depth(model, device, input_tensor, original_size):
     return depth_map
 
 
+def create_depth_frame(depth_map, colormap='magma'):
+    """Create a colored depth frame for video (returns numpy array)"""
+    # Normalize depth map to 0-1 range
+    depth_normalized = (depth_map - depth_map.min()) / (depth_map.max() - depth_map.min() + 1e-8)
+    
+    # Apply colormap
+    cmap = cm.get_cmap(colormap)
+    depth_colored = cmap(depth_normalized)
+    
+    # Convert to BGR for OpenCV (remove alpha channel and convert RGB to BGR)
+    depth_bgr = (depth_colored[:, :, :3] * 255).astype(np.uint8)
+    depth_bgr = cv2.cvtColor(depth_bgr, cv2.COLOR_RGB2BGR)
+    
+    return depth_bgr
+
+
+def process_video(model, device, video_path, colormap='magma', progress_bar=None, status_text=None):
+    """Process video and generate depth estimation for each frame"""
+    cap = cv2.VideoCapture(video_path)
+    
+    if not cap.isOpened():
+        return None, "Failed to open video file"
+    
+    # Get video properties
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    # Create temporary output file
+    temp_output = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+    temp_output_path = temp_output.name
+    temp_output.close()
+    
+    # Initialize video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(temp_output_path, fourcc, fps, (frame_width, frame_height))
+    
+    # Process each frame
+    frame_count = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # Convert BGR to RGB and then to PIL Image
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(frame_rgb)
+        
+        # Preprocess and predict
+        input_tensor, original_size = preprocess_image(pil_image)
+        depth_map = predict_depth(model, device, input_tensor, original_size)
+        
+        # Create depth visualization frame
+        depth_frame = create_depth_frame(depth_map, colormap)
+        
+        # Resize depth frame to match original video dimensions
+        depth_frame_resized = cv2.resize(depth_frame, (frame_width, frame_height))
+        
+        # Write frame
+        out.write(depth_frame_resized)
+        
+        frame_count += 1
+        
+        # Update progress
+        if progress_bar is not None:
+            progress_bar.progress(frame_count / total_frames)
+        if status_text is not None:
+            status_text.text(f"Processing frame {frame_count}/{total_frames}")
+    
+    cap.release()
+    out.release()
+    
+    return temp_output_path, None
+
+
+def process_video_side_by_side(model, device, video_path, colormap='magma', progress_bar=None, status_text=None):
+    """Process video and generate side-by-side comparison (original + depth)"""
+    cap = cv2.VideoCapture(video_path)
+    
+    if not cap.isOpened():
+        return None, "Failed to open video file"
+    
+    # Get video properties
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    # Create temporary output file
+    temp_output = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+    temp_output_path = temp_output.name
+    temp_output.close()
+    
+    # Initialize video writer (double width for side-by-side)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(temp_output_path, fourcc, fps, (frame_width * 2, frame_height))
+    
+    # Process each frame
+    frame_count = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # Convert BGR to RGB and then to PIL Image
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(frame_rgb)
+        
+        # Preprocess and predict
+        input_tensor, original_size = preprocess_image(pil_image)
+        depth_map = predict_depth(model, device, input_tensor, original_size)
+        
+        # Create depth visualization frame
+        depth_frame = create_depth_frame(depth_map, colormap)
+        
+        # Resize depth frame to match original video dimensions
+        depth_frame_resized = cv2.resize(depth_frame, (frame_width, frame_height))
+        
+        # Create side-by-side frame
+        combined_frame = np.hstack([frame, depth_frame_resized])
+        
+        # Write frame
+        out.write(combined_frame)
+        
+        frame_count += 1
+        
+        # Update progress
+        if progress_bar is not None:
+            progress_bar.progress(frame_count / total_frames)
+        if status_text is not None:
+            status_text.text(f"Processing frame {frame_count}/{total_frames}")
+    
+    cap.release()
+    out.release()
+    
+    return temp_output_path, None
+
+
 def main():
     st.set_page_config(
         page_title="Depth Estimation - ResNet152",
@@ -164,12 +307,108 @@ def main():
     target_resolution = resolution_map[resolution]
     
     # TABS
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📷 Sample Images", "📤 Upload Image", "💻 Laptop Webcam", "📱 Phone Camera", "ℹ About"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📷 Sample Images", "📤 Upload Image", "🎬 Upload Video", "💻 Laptop Webcam", "📱 Phone Camera", "ℹ About"])
     
     # ... (Keep Tab 1 and Tab 2 code exactly as they were) ...
     
-    # ==================== LAPTOP WEBCAM TAB ====================
+    # ==================== VIDEO UPLOAD TAB ====================
     with tab3:
+        st.header("🎬 Upload Video for Depth Estimation")
+        
+        uploaded_video = st.file_uploader(
+            "Choose a video file...",
+            type=['mp4', 'avi', 'mov', 'mkv'],
+            help="Upload a video file for depth estimation"
+        )
+        
+        if uploaded_video is not None:
+            # Save uploaded video to temporary file
+            temp_input = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            temp_input.write(uploaded_video.read())
+            temp_input_path = temp_input.name
+            temp_input.close()
+            
+            # Display original video
+            st.subheader("Original Video")
+            st.video(uploaded_video)
+            
+            # Get video info
+            cap = cv2.VideoCapture(temp_input_path)
+            fps = int(cap.get(cv2.CAP_PROP_FPS))
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = total_frames / fps if fps > 0 else 0
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap.release()
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Duration", f"{duration:.1f}s")
+            with col2:
+                st.metric("FPS", f"{fps}")
+            with col3:
+                st.metric("Frames", f"{total_frames}")
+            with col4:
+                st.metric("Resolution", f"{width}x{height}")
+            
+            # Processing options
+            st.subheader("Processing Options")
+            output_mode = st.radio(
+                "Output Mode",
+                ["Depth Only", "Side-by-Side (Original + Depth)"],
+                horizontal=True
+            )
+            
+            if st.button("🚀 Process Video", key="btn_video"):
+                st.subheader("Processing...")
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                with st.spinner("Processing video frames with GPU..."):
+                    if output_mode == "Depth Only":
+                        output_path, error = process_video(
+                            model, device, temp_input_path, colormap,
+                            progress_bar, status_text
+                        )
+                    else:
+                        output_path, error = process_video_side_by_side(
+                            model, device, temp_input_path, colormap,
+                            progress_bar, status_text
+                        )
+                
+                if error:
+                    st.error(f"❌ Error: {error}")
+                else:
+                    st.success("✅ Video processing complete!")
+                    status_text.text("Done!")
+                    
+                    # Display processed video
+                    st.subheader("Depth Estimation Video")
+                    
+                    # Read the output video for display
+                    with open(output_path, 'rb') as f:
+                        video_bytes = f.read()
+                    st.video(video_bytes)
+                    
+                    # Download button
+                    st.download_button(
+                        label="📥 Download Processed Video",
+                        data=video_bytes,
+                        file_name="depth_estimation_output.mp4",
+                        mime="video/mp4"
+                    )
+                    
+                    # Cleanup
+                    os.unlink(output_path)
+            
+            # Cleanup input temp file
+            try:
+                os.unlink(temp_input_path)
+            except:
+                pass
+    
+    # ==================== LAPTOP WEBCAM TAB ====================
+    with tab4:
         st.header("💻 Live Depth from Laptop Webcam")
         st.markdown("Use your laptop's built-in webcam for real-time depth estimation.")
         
@@ -178,10 +417,25 @@ def main():
             "Select Camera",
             [0, 1, 2],
             format_func=lambda x: f"Camera {x}" + (" (Default)" if x == 0 else ""),
-            index=0
+            index=0,
+            key="webcam_camera_select"
         )
         
-        run_webcam = st.toggle("Start Webcam", key="webcam_toggle")
+        # Use button instead of toggle for better control
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            start_webcam = st.button("▶️ Start Webcam", key="start_webcam_btn")
+        with col_btn2:
+            stop_webcam = st.button("⏹️ Stop Webcam", key="stop_webcam_btn")
+        
+        # Session state for webcam
+        if 'webcam_running' not in st.session_state:
+            st.session_state.webcam_running = False
+        
+        if start_webcam:
+            st.session_state.webcam_running = True
+        if stop_webcam:
+            st.session_state.webcam_running = False
         
         # Placeholders for images
         col_web1, col_web2 = st.columns(2)
@@ -194,21 +448,23 @@ def main():
         
         # FPS counter
         fps_placeholder = st.empty()
+        status_placeholder = st.empty()
             
-        if run_webcam:
+        if st.session_state.webcam_running:
             cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)  # CAP_DSHOW for faster Windows camera access
             
             if not cap.isOpened():
                 st.error(f"Could not open camera {camera_index}. Try a different camera index.")
+                st.session_state.webcam_running = False
             else:
-                import time
+                status_placeholder.success("🟢 Webcam is running... Click 'Stop Webcam' to end.")
                 frame_count = 0
                 start_time = time.time()
                 
-                while run_webcam:
+                while st.session_state.webcam_running:
                     ret, frame = cap.read()
                     if not ret:
-                        st.warning("Failed to grab frame. Retrying...")
+                        status_placeholder.warning("Failed to grab frame. Retrying...")
                         continue
                     
                     # Resize frame to target resolution for faster processing
@@ -242,9 +498,10 @@ def main():
                         fps_placeholder.metric("FPS", f"{fps:.1f}")
                     
                 cap.release()
+                status_placeholder.info("🔴 Webcam stopped.")
     
     # ==================== PHONE CAMERA TAB ====================
-    with tab4:
+    with tab5:
         st.header("📱 Live Depth from Phone Camera")
         st.markdown("""
         1. Install *IP Webcam* (Android) or similar on your phone.
@@ -256,7 +513,21 @@ def main():
         # Typical Android IP Webcam URL is http://<IP>:8080/video
         cam_url = st.text_input("Camera URL", "http://192.168.1.XX:8080/video")
         
-        run_live = st.toggle("Start Live Stream", key="phone_toggle")
+        # Use button instead of toggle for better control
+        col_pbtn1, col_pbtn2 = st.columns(2)
+        with col_pbtn1:
+            start_phone = st.button("▶️ Start Phone Camera", key="start_phone_btn")
+        with col_pbtn2:
+            stop_phone = st.button("⏹️ Stop Phone Camera", key="stop_phone_btn")
+        
+        # Session state for phone camera
+        if 'phone_running' not in st.session_state:
+            st.session_state.phone_running = False
+        
+        if start_phone:
+            st.session_state.phone_running = True
+        if stop_phone:
+            st.session_state.phone_running = False
         
         # Placeholders for images
         col_live1, col_live2 = st.columns(2)
@@ -269,21 +540,23 @@ def main():
         
         # FPS counter
         phone_fps_placeholder = st.empty()
+        phone_status_placeholder = st.empty()
             
-        if run_live:
+        if st.session_state.phone_running:
             cap = cv2.VideoCapture(cam_url)
             
             if not cap.isOpened():
                 st.error("Could not connect to phone camera. Check URL and Wi-Fi.")
+                st.session_state.phone_running = False
             else:
-                import time
+                phone_status_placeholder.success("🟢 Phone camera is running... Click 'Stop Phone Camera' to end.")
                 frame_count = 0
                 start_time = time.time()
                 
-                while run_live:
+                while st.session_state.phone_running:
                     ret, frame = cap.read()
                     if not ret:
-                        st.write("Frame drop or stream ended.")
+                        phone_status_placeholder.warning("Frame drop or stream ended.")
                         break
                     
                     # Resize frame to target resolution for faster processing
@@ -317,9 +590,10 @@ def main():
                         phone_fps_placeholder.metric("FPS", f"{fps:.1f}")
                     
                 cap.release()
+                phone_status_placeholder.info("🔴 Phone camera stopped.")
 
     # ==================== ABOUT TAB ====================
-    with tab5:
+    with tab6:
         st.header("About This Application")
         st.markdown("""
         ### Model Architecture
@@ -330,14 +604,18 @@ def main():
         - **Decoder**: Custom upsampling blocks with skip connections
         - **Output**: Depth map scaled to 0-10 meters
         
-        ### Live Camera Options
-        - **Laptop Webcam**: Use your built-in camera (Camera 0 is usually default)
-        - **Phone Camera**: Use IP Webcam app to stream from your phone
+        ### Available Features
+        - **Sample Images**: Test with pre-loaded images
+        - **Upload Image**: Process your own images
+        - **Upload Video**: Process video files with depth estimation
+        - **Laptop Webcam**: Real-time depth from built-in camera
+        - **Phone Camera**: Stream from IP Webcam app
         
         ### Performance Tips
         - Use **360p** resolution for fastest processing
         - GPU acceleration is enabled when CUDA is available
         - Lower resolution = Higher FPS
+        - For videos, processing time depends on frame count
         """)
         
         st.markdown("---")
