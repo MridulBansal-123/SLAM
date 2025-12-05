@@ -179,10 +179,17 @@ def colorize_depth(
         
     Returns:
         Colored depth map as RGB numpy array (uint8)
+        
+    Note:
+        Inverted so that NEAR objects appear LIGHT/BRIGHT
+        and FAR objects appear DARK.
     """
     # Normalize to 0-1 range
     depth_normalized = (depth_map - depth_map.min()) / \
                        (depth_map.max() - depth_map.min() + 1e-8)
+    
+    # Invert: near (low depth) = light, far (high depth) = dark
+    depth_normalized = 1.0 - depth_normalized
     
     # Apply colormap
     cmap = cm.get_cmap(colormap)
