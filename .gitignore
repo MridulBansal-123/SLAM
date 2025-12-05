@@ -46,6 +46,41 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Model weights (large files)
+*.pth
+*.pt
+*.onnx
+*.h5
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Legacy files
+*_legacy.py
+
 # Translations
 *.mo
 *.pot
