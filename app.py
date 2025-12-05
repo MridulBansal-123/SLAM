@@ -25,6 +25,7 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -34,6 +35,11 @@ from src.model import ResNetDepthModel
 from src.inference import DepthEstimator, colorize_depth
 from src.video import VideoProcessor
 from src.utils import print_device_info
+from src.reconstruction import (
+    PointCloudGenerator, 
+    reconstruct_3d_from_image, 
+    create_plotly_pointcloud
+)
 
 
 # Print device info on startup
@@ -419,6 +425,183 @@ def render_phone_camera_tab(
             phone_status_placeholder.info("🔴 Phone camera stopped.")
 
 
+def render_3d_reconstruction_tab(estimator: DepthEstimator, colormap: str) -> None:
+    """Render the 3D reconstruction tab content."""
+    st.header("🌐 3D Reconstruction")
+    st.markdown("""
+    Generate interactive 3D point cloud reconstructions from images using depth estimation.
+    
+    **How it works:**
+    1. Upload an image
+    2. The model predicts depth for each pixel
+    3. A similarity-based filter refines the depth map
+    4. Depth values are back-projected to 3D coordinates
+    5. An interactive 3D visualization is generated
+    """)
+    
+    # Upload section
+    uploaded_file = st.file_uploader(
+        "Upload an image for 3D reconstruction",
+        type=['jpg', 'jpeg', 'png'],
+        help="Upload an image to create a 3D point cloud",
+        key="3d_upload"
+    )
+    
+    # Settings
+    st.subheader("⚙️ Reconstruction Settings")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        apply_filter = st.checkbox(
+            "Apply Denoising Filter",
+            value=True,
+            help="Apply similarity-based filter to smooth the depth map"
+        )
+    
+    with col2:
+        point_size = st.slider(
+            "Point Size",
+            min_value=1,
+            max_value=5,
+            value=2,
+            help="Size of points in 3D visualization"
+        )
+    
+    with col3:
+        quality = st.selectbox(
+            "Quality",
+            ["High (Slow)", "Medium", "Low (Fast)"],
+            index=1,
+            help="Higher quality = more points but slower"
+        )
+    
+    # Map quality to downsample factor
+    quality_map = {"High (Slow)": 1, "Medium": 2, "Low (Fast)": 4}
+    downsample_factor = quality_map[quality]
+    
+    if uploaded_file is not None:
+        # Load image
+        image = Image.open(uploaded_file).convert("RGB")
+        
+        # Show original image
+        st.subheader("📷 Original Image")
+        st.image(image, use_container_width=True, caption="Uploaded Image")
+        
+        if st.button("🚀 Generate 3D Reconstruction", key="btn_3d"):
+            with st.spinner("Processing... This may take a moment."):
+                # Step 1: Estimate depth
+                st.text("Step 1/3: Estimating depth...")
+                depth_map = estimator.estimate_depth(image)
+                
+                # Step 2: Show depth map
+                st.text("Step 2/3: Visualizing depth map...")
+                col_depth1, col_depth2 = st.columns(2)
+                
+                with col_depth1:
+                    st.subheader("Depth Map")
+                    depth_colored = colorize_depth(depth_map, colormap)
+                    st.image(depth_colored, use_container_width=True)
+                
+                # Display depth statistics
+                with col_depth2:
+                    st.subheader("Depth Statistics")
+                    st.metric("Min Depth", f"{depth_map.min():.2f}m")
+                    st.metric("Max Depth", f"{depth_map.max():.2f}m")
+                    st.metric("Mean Depth", f"{depth_map.mean():.2f}m")
+                
+                # Step 3: Generate 3D reconstruction
+                st.text("Step 3/3: Generating 3D point cloud...")
+                
+                try:
+                    # Generate point cloud
+                    points, colors = reconstruct_3d_from_image(
+                        image,
+                        depth_map,
+                        target_size=(224, 224),
+                        apply_filter=apply_filter,
+                        downsample_factor=downsample_factor
+                    )
+                    
+                    st.success(f"✅ Generated {len(points):,} points!")
+                    
+                    # Create Plotly figure
+                    st.subheader("🌐 Interactive 3D Point Cloud")
+                    st.markdown("*Drag to rotate, scroll to zoom, right-click to pan*")
+                    
+                    # Convert colors to plotly format
+                    rgb_strings = [
+                        f'rgb({int(c[0]*255)},{int(c[1]*255)},{int(c[2]*255)})' 
+                        for c in colors
+                    ]
+                    
+                    fig = go.Figure(data=[go.Scatter3d(
+                        x=points[:, 0],
+                        y=points[:, 1],
+                        z=points[:, 2],
+                        mode='markers',
+                        marker=dict(
+                            size=point_size,
+                            color=rgb_strings,
+                            opacity=1.0
+                        ),
+                        hoverinfo='skip'
+                    )])
+                    
+                    fig.update_layout(
+                        title={
+                            'text': "3D Dense Reconstruction",
+                            'x': 0.5,
+                            'xanchor': 'center'
+                        },
+                        scene=dict(
+                            aspectmode='data',
+                            xaxis=dict(visible=False, showgrid=False),
+                            yaxis=dict(visible=False, showgrid=False),
+                            zaxis=dict(visible=False, showgrid=False),
+                            bgcolor='rgb(20, 20, 20)'
+                        ),
+                        paper_bgcolor='rgb(20, 20, 20)',
+                        margin=dict(l=0, r=0, t=40, b=0),
+                        height=600
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Option to download point cloud data
+                    st.subheader("📥 Export Point Cloud")
+                    
+                    # Create PLY file content
+                    ply_header = f"""ply
+format ascii 1.0
+element vertex {len(points)}
+property float x
+property float y
+property float z
+property uchar red
+property uchar green
+property uchar blue
+end_header
+"""
+                    ply_data = ""
+                    for i in range(len(points)):
+                        r, g, b = int(colors[i, 0] * 255), int(colors[i, 1] * 255), int(colors[i, 2] * 255)
+                        ply_data += f"{points[i, 0]:.4f} {points[i, 1]:.4f} {points[i, 2]:.4f} {r} {g} {b}\n"
+                    
+                    ply_content = ply_header + ply_data
+                    
+                    st.download_button(
+                        label="📥 Download as PLY file",
+                        data=ply_content,
+                        file_name="reconstruction.ply",
+                        mime="application/octet-stream",
+                        help="PLY files can be opened in MeshLab, Blender, or CloudCompare"
+                    )
+                    
+                except Exception as e:
+                    st.error(f"❌ Error during reconstruction: {str(e)}")
+                    st.info("Try reducing the quality setting or using a different image.")
+
+
 def render_about_tab() -> None:
     """Render the about tab content."""
     st.header("About This Application")
@@ -432,10 +615,17 @@ def render_about_tab() -> None:
     - **Decoder**: Custom upsampling blocks with skip connections
     - **Output**: Depth map scaled to 0-10 meters
     
+    ### 3D Reconstruction Pipeline
+    The 3D reconstruction feature implements:
+    1. **Depth Prediction (Section II)**: ResNet-152 encoder-decoder network
+    2. **Similarity-Based Filter (Section III)**: Denoising using surface normals
+    3. **Point Cloud Generation (Section IV)**: Back-projection using pinhole camera model
+    
     ### Available Features
     - **Sample Images**: Test with pre-loaded images
     - **Upload Image**: Process your own images
     - **Upload Video**: Process video files with depth estimation
+    - **3D Reconstruction**: Generate interactive point clouds
     - **Laptop Webcam**: Real-time depth from built-in camera
     - **Phone Camera**: Stream from IP Webcam app
     
@@ -443,11 +633,12 @@ def render_about_tab() -> None:
     - Use **360p** resolution for fastest processing
     - GPU acceleration is enabled when CUDA is available
     - Lower resolution = Higher FPS
-    - For videos, processing time depends on frame count
+    - For 3D reconstruction, use "Medium" quality for best balance
     
     ### Technology Stack
     - **PyTorch**: Deep learning framework
     - **Streamlit**: Web application framework
+    - **Plotly**: Interactive 3D visualization
     - **OpenCV**: Computer vision library
     - **ResNet-152**: Backbone architecture
     """)
@@ -499,10 +690,11 @@ def main() -> None:
     target_resolution = config.RESOLUTION_PRESETS[resolution]
     
     # Main tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📷 Sample Images",
         "📤 Upload Image", 
         "🎬 Upload Video",
+        "🌐 3D Reconstruction",
         "💻 Laptop Webcam",
         "📱 Phone Camera",
         "ℹ️ About"
@@ -518,12 +710,15 @@ def main() -> None:
         render_upload_video_tab(estimator, colormap)
     
     with tab4:
-        render_webcam_tab(estimator, colormap, target_resolution)
+        render_3d_reconstruction_tab(estimator, colormap)
     
     with tab5:
-        render_phone_camera_tab(estimator, colormap, target_resolution)
+        render_webcam_tab(estimator, colormap, target_resolution)
     
     with tab6:
+        render_phone_camera_tab(estimator, colormap, target_resolution)
+    
+    with tab7:
         render_about_tab()
 
 
