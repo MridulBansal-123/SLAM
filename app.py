@@ -583,6 +583,16 @@ def render_about_tab() -> None:
     | **Decoder** | 4 upsampling blocks with skip connections |
     | **Output** | Single-channel depth map (0-10 meters) |
     
+    ### Model Performance (iBims-1 Zero-Shot)
+    
+    | Metric | Value | Description |
+    |--------|-------|-------------|
+    | **RMSE** | 0.5848 m | Root Mean Square Error (lower is better) |
+    | **AbsRel** | 0.1365 | Absolute Relative Error (lower is better) |
+    | **δ < 1.25** | 81.56% | Accuracy threshold (higher is better) |
+    | **δ < 1.25²** | 95.64% | Accuracy threshold (higher is better) |
+    | **δ < 1.25³** | 98.63% | Accuracy threshold (higher is better) |
+    
     ### 3D Reconstruction Pipeline
     
     1. **Depth Prediction**: ResNet-152 encoder-decoder network

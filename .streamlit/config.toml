@@ -1,5 +1,5 @@
 [theme]
-base = "dark"
+base = "light"
 
 # General color setup
 textColor = "#e2e8f0"
@@ -7,7 +7,7 @@ primaryColor = "#615fff"
 backgroundColor = "#1d293d"
 secondaryBackgroundColor = "#0f172b"
 
-# Widgets
+# Widgets   
 showWidgetBorder = true
 borderColor = "#314158"
 
@@ -19,7 +19,7 @@ font = "'Space Grotesk':https://fonts.googleapis.com/css2?family=Space+Grotesk:w
 baseFontWeight = 300
 baseFontSize = 14
 
-# Heading text
+# Heading texts
 headingFont = "Space Grotesk"
 headingFontWeights = [300, 400, 400, 300, 300, 300]
 headingFontSizes = ["2.5rem", "1.5rem", "1rem"]

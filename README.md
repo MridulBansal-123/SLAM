@@ -54,6 +54,18 @@ Input Image (RGB)
    Depth Map (0-10m)
 ```
 
+## 📊 Model Performance
+
+Zero-shot evaluation on the iBims-1 benchmark (100 images):
+
+| Metric | Value | Description |
+|--------|-------|-------------|
+| **RMSE** | 0.5848 m | Root Mean Square Error (lower is better) |
+| **AbsRel** | 0.1365 | Absolute Relative Error (lower is better) |
+| **δ < 1.25** | 81.56% | Accuracy threshold (higher is better) |
+| **δ < 1.25²** | 95.64% | Accuracy threshold (higher is better) |
+| **δ < 1.25³** | 98.63% | Accuracy threshold (higher is better) |
+
 ## 📁 Project Structure
 
 ```
