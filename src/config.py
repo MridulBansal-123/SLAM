@@ -47,7 +47,7 @@ class Config:
         
         # Streamlit page configuration
         self.PAGE_TITLE: str = "Depth Estimation - ResNet152"
-        self.PAGE_ICON: str = "🔭"
+        self.PAGE_ICON: str = ":material/landscape:"
         self.PAGE_LAYOUT: str = "wide"
     
     @property

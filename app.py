@@ -63,7 +63,7 @@ def load_model() -> Tuple[Optional[DepthEstimator], str, bool]:
 
 def render_upload_image_tab(estimator: DepthEstimator, colormap: str) -> None:
     """Render the upload image tab content."""
-    st.header("📤 Upload Image")
+    st.header("Upload Image")
     
     uploaded_file = st.file_uploader(
         "Choose an image...", 
@@ -103,7 +103,7 @@ def render_upload_video_tab(
     colormap: str
 ) -> None:
     """Render the upload video tab content."""
-    st.header("🎬 Upload Video for Depth Estimation")
+    st.header("Upload Video for Depth Estimation")
     
     uploaded_video = st.file_uploader(
         "Choose a video file...",
@@ -147,7 +147,7 @@ def render_upload_video_tab(
         horizontal=True
     )
     
-    if st.button("🚀 Process Video", key="btn_video"):
+    if st.button("Process Video", key="btn_video"):
         st.subheader("Processing...")
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -167,9 +167,9 @@ def render_upload_video_tab(
                 )
         
         if error:
-            st.error(f"❌ Error: {error}")
+            st.error(f"Error: {error}")
         else:
-            st.success("✅ Video processing complete!")
+            st.success("Video processing complete!")
             status_text.text("Done!")
             
             # Display and download processed video
@@ -179,7 +179,7 @@ def render_upload_video_tab(
             st.video(video_bytes)
             
             st.download_button(
-                label="📥 Download Processed Video",
+                label="Download Processed Video",
                 data=video_bytes,
                 file_name="depth_estimation_output.mp4",
                 mime="video/mp4"
@@ -200,7 +200,7 @@ def render_webcam_tab(
     target_resolution: Optional[Tuple[int, int]]
 ) -> None:
     """Render the laptop webcam tab content."""
-    st.header("💻 Live Depth from Laptop Webcam")
+    st.header("Live Depth from Laptop Webcam")
     
     # Inline controls row
     col_cam, col_btn1, col_btn2 = st.columns([2, 1, 1])
@@ -216,10 +216,10 @@ def render_webcam_tab(
         )
     
     with col_btn1:
-        start_webcam = st.button("▶️ Start", key="start_webcam_btn", use_container_width=True)
+        start_webcam = st.button("Start", key="start_webcam_btn", use_container_width=True)
     
     with col_btn2:
-        stop_webcam = st.button("⏹️ Stop", key="stop_webcam_btn", use_container_width=True)
+        stop_webcam = st.button("Stop", key="stop_webcam_btn", use_container_width=True)
     
     # Session state for webcam
     if 'webcam_running' not in st.session_state:
@@ -250,7 +250,7 @@ def render_webcam_tab(
             st.error(f"Could not open camera {camera_index}. Try a different camera index.")
             st.session_state.webcam_running = False
         else:
-            status_placeholder.success("🟢 Webcam is running... Click 'Stop Webcam' to end.")
+            status_placeholder.success("Webcam is running... Click 'Stop' to end.")
             frame_count = 0
             start_time = time.time()
             
@@ -287,7 +287,7 @@ def render_webcam_tab(
                     fps_placeholder.metric("FPS", f"{fps:.1f}")
             
             cap.release()
-            status_placeholder.info("🔴 Webcam stopped.")
+            status_placeholder.info("Webcam stopped.")
 
 
 def render_phone_camera_tab(
@@ -296,7 +296,7 @@ def render_phone_camera_tab(
     target_resolution: Optional[Tuple[int, int]]
 ) -> None:
     """Render the phone camera tab content."""
-    st.header("📱 Live Depth from Phone Camera")
+    st.header("Live Depth from Phone Camera")
     st.markdown("""
     1. Install **IP Webcam** (Android) or similar on your phone.
     2. Ensure phone and laptop are on the **same Wi-Fi**.
@@ -315,10 +315,10 @@ def render_phone_camera_tab(
         )
     
     with col_btn1:
-        start_phone = st.button("▶️ Start", key="start_phone_btn", use_container_width=True)
+        start_phone = st.button("Start", key="start_phone_btn", use_container_width=True)
     
     with col_btn2:
-        stop_phone = st.button("⏹️ Stop", key="stop_phone_btn", use_container_width=True)
+        stop_phone = st.button("Stop", key="stop_phone_btn", use_container_width=True)
     
     # Session state
     if 'phone_running' not in st.session_state:
@@ -349,7 +349,7 @@ def render_phone_camera_tab(
             st.session_state.phone_running = False
         else:
             phone_status_placeholder.success(
-                "🟢 Phone camera is running... Click 'Stop Phone Camera' to end."
+                "Phone camera is running... Click 'Stop' to end."
             )
             frame_count = 0
             start_time = time.time()
@@ -387,12 +387,12 @@ def render_phone_camera_tab(
                     phone_fps_placeholder.metric("FPS", f"{fps:.1f}")
             
             cap.release()
-            phone_status_placeholder.info("🔴 Phone camera stopped.")
+            phone_status_placeholder.info("Phone camera stopped.")
 
 
 def render_3d_reconstruction_tab(estimator: DepthEstimator, colormap: str) -> None:
     """Render the 3D reconstruction tab content."""
-    st.header("🌐 3D Reconstruction")
+    st.header("3D Reconstruction")
     st.markdown("""
     Generate interactive 3D point cloud reconstructions from images using depth estimation.
     
@@ -413,7 +413,7 @@ def render_3d_reconstruction_tab(estimator: DepthEstimator, colormap: str) -> No
     )
     
     # Settings
-    st.subheader("⚙️ Reconstruction Settings")
+    st.subheader("Reconstruction Settings")
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -449,10 +449,10 @@ def render_3d_reconstruction_tab(estimator: DepthEstimator, colormap: str) -> No
         image = Image.open(uploaded_file).convert("RGB")
         
         # Show original image
-        st.subheader("📷 Original Image")
+        st.subheader("Original Image")
         st.image(image, use_container_width=True, caption="Uploaded Image")
         
-        if st.button("🚀 Generate 3D Reconstruction", key="btn_3d"):
+        if st.button("Generate 3D Reconstruction", key="btn_3d"):
             with st.spinner("Processing... This may take a moment."):
                 # Step 1: Estimate depth
                 st.text("Step 1/3: Estimating depth...")
@@ -487,10 +487,10 @@ def render_3d_reconstruction_tab(estimator: DepthEstimator, colormap: str) -> No
                         downsample_factor=downsample_factor
                     )
                     
-                    st.success(f"✅ Generated {len(points):,} points!")
+                    st.success(f"Generated {len(points):,} points!")
                     
                     # Create Plotly figure
-                    st.subheader("🌐 Interactive 3D Point Cloud")
+                    st.subheader("Interactive 3D Point Cloud")
                     st.markdown("*Drag to rotate, scroll to zoom, right-click to pan*")
                     
                     # Convert colors to plotly format
@@ -533,7 +533,7 @@ def render_3d_reconstruction_tab(estimator: DepthEstimator, colormap: str) -> No
                     st.plotly_chart(fig, use_container_width=True)
                     
                     # Option to download point cloud data
-                    st.subheader("📥 Export Point Cloud")
+                    st.subheader("Export Point Cloud")
                     
                     # Create PLY file content
                     ply_header = f"""ply
@@ -555,7 +555,7 @@ end_header
                     ply_content = ply_header + ply_data
                     
                     st.download_button(
-                        label="📥 Download as PLY file",
+                        label="Download as PLY file",
                         data=ply_content,
                         file_name="reconstruction.ply",
                         mime="application/octet-stream",
@@ -563,16 +563,16 @@ end_header
                     )
                     
                 except Exception as e:
-                    st.error(f"❌ Error during reconstruction: {str(e)}")
+                    st.error(f"Error during reconstruction: {str(e)}")
                     st.info("Try reducing the quality setting or using a different image.")
 
 
 def render_about_tab() -> None:
     """Render the about tab content."""
-    st.header("ℹ️ About")
+    st.header("About")
     
     st.markdown("""
-    ### 🏗️ Model Architecture
+    ### Model Architecture
     
     This depth estimation model uses a **ResNet-152** backbone as an encoder 
     with a custom decoder featuring skip connections (U-Net style).
@@ -583,36 +583,36 @@ def render_about_tab() -> None:
     | **Decoder** | 4 upsampling blocks with skip connections |
     | **Output** | Single-channel depth map (0-10 meters) |
     
-    ### 🔄 3D Reconstruction Pipeline
+    ### 3D Reconstruction Pipeline
     
     1. **Depth Prediction**: ResNet-152 encoder-decoder network
     2. **Similarity-Based Filter**: Denoising using surface normals  
     3. **Point Cloud Generation**: Back-projection using pinhole camera model
     
-    ### ✨ Features
+    ### Features
     
     | Feature | Description |
     |---------|-------------|
-    | 📤 Upload Image | Process single images |
-    | 🎬 Upload Video | Frame-by-frame video processing |
-    | 🌐 3D Reconstruction | Interactive point cloud visualization |
-    | 💻 Laptop Webcam | Real-time depth from built-in camera |
-    | 📱 Phone Camera | Stream via IP Webcam app |
+    | Upload Image | Process single images |
+    | Upload Video | Frame-by-frame video processing |
+    | 3D Reconstruction | Interactive point cloud visualization |
+    | Laptop Webcam | Real-time depth from built-in camera |
+    | Phone Camera | Stream via IP Webcam app |
     
-    ### ⚡ Performance Tips
+    ### Performance Tips
     
     - Use **360p** resolution for fastest processing
     - GPU acceleration is automatic when CUDA is available
     - Lower resolution = Higher FPS
     - For 3D reconstruction, use "Medium" quality for best balance
     
-    ### 🛠️ Technology Stack
+    ### Technology Stack
     
     `PyTorch` · `Streamlit` · `Plotly` · `OpenCV` · `NumPy`
     """)
     
     st.markdown("---")
-    st.caption("Built with ❤️ by Mridul Bansal | MIT License")
+    st.caption("Built by Mridul Bansal | MIT License")
 
 
 # ==================== MAIN APPLICATION ====================
@@ -736,7 +736,7 @@ def main() -> None:
         estimator, device, model_loaded = load_model()
     
     if estimator is None:
-        st.markdown('<span class="status-chip error">❌ Failed to load model</span>', unsafe_allow_html=True)
+        st.markdown('<span class="status-chip error">Failed to load model</span>', unsafe_allow_html=True)
         return
     
     # Initialize session state for settings
@@ -747,25 +747,25 @@ def main() -> None:
     
     # Main tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "📤 Upload Image", 
-        "🎬 Upload Video",
-        "🌐 3D Reconstruction",
-        "💻 Laptop Webcam",
-        "📱 Phone Camera",
-        "⚙️ Settings",
-        "ℹ️ About"
+        "Upload Image", 
+        "Upload Video",
+        "3D Reconstruction",
+        "Laptop Webcam",
+        "Phone Camera",
+        "Settings",
+        "About"
     ])
     
     # Settings tab - render first to get values
     with tab6:
-        st.header("⚙️ Settings")
+        st.header("Settings")
         
         # Inline settings row
         col1, col2, col3 = st.columns([1, 1, 1])
         
         with col1:
             colormap = st.selectbox(
-                "🎨 Colormap",
+                "Colormap",
                 config.COLORMAPS,
                 index=config.COLORMAPS.index(st.session_state.colormap),
                 help="Color scheme for depth visualization"
@@ -774,7 +774,7 @@ def main() -> None:
         
         with col2:
             resolution = st.selectbox(
-                "📹 Resolution",
+                "Resolution",
                 list(config.RESOLUTION_PRESETS.keys()),
                 index=list(config.RESOLUTION_PRESETS.keys()).index(st.session_state.resolution),
                 help="Live stream resolution"
@@ -785,7 +785,7 @@ def main() -> None:
             st.markdown("**System**")
             res = config.RESOLUTION_PRESETS[resolution]
             res_text = f"{res[0]}x{res[1]}" if res else "Native"
-            st.markdown(f'<span class="status-chip info">🖥️ {device} • {res_text}</span>', unsafe_allow_html=True)
+            st.markdown(f'<span class="status-chip info">{device} | {res_text}</span>', unsafe_allow_html=True)
     
     # Get current settings
     colormap = st.session_state.colormap
