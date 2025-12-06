@@ -230,6 +230,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📧 Contact
 
+Dax Modi - [@daxmodi1](https://github.com/daxmodi1)
 Mridul Bansal - [@MridulBansal-123](https://github.com/MridulBansal-123)
 
 Project Link: [https://github.com/MridulBansal-123/SLAM](https://github.com/MridulBansal-123/SLAM)
