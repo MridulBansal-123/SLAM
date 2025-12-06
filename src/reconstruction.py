@@ -87,7 +87,6 @@ class SimilarityBasedFilter(nn.Module):
         sigma_depth = 0.1  # Threshold from paper
         weights = torch.exp(-depth_diff / (2 * sigma_depth ** 2))
 
-        # 5. Weighted average for depth refinement
         weighted_sum = torch.sum(depth_unfold * weights, dim=2)
         weight_total = torch.sum(weights, dim=2)
 

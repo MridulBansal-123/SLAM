@@ -15,7 +15,7 @@ class Config:
     def __init__(self):
         # Paths
         self.ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.MODEL_DIR = os.path.dirname(self.ROOT_DIR)  # Parent of SLAM folder
+        self.MODEL_DIR = self.ROOT_DIR  # Model is inside the SLAM folder
         self.MODEL_FILENAME = "resnet152_depth_model.pth"
         
         # Model settings

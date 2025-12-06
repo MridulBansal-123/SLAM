@@ -6,12 +6,16 @@ using a ResNet-152 encoder-decoder architecture.
 
 Features:
     - Upload and process images
-    - Upload and process videos
+    - Upload and process videos  
     - Real-time depth estimation from laptop webcam
     - Real-time depth estimation from phone camera (via IP Webcam)
+    - Interactive 3D point cloud reconstruction
 
 Usage:
     streamlit run app.py
+
+Author: Mridul Bansal
+License: MIT
 """
 
 import os
@@ -24,83 +28,38 @@ import cv2
 import numpy as np
 import streamlit as st
 from PIL import Image
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 
-# Add parent directory to path for imports
+# Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.config import config
-from src.model import ResNetDepthModel
 from src.inference import DepthEstimator, colorize_depth
 from src.video import VideoProcessor
-from src.utils import print_device_info
-from src.reconstruction import (
-    PointCloudGenerator, 
-    reconstruct_3d_from_image, 
-    create_plotly_pointcloud
-)
+from src.reconstruction import reconstruct_3d_from_image
 
 
-# Print device info on startup
-print_device_info()
-
-
-# ==================== CACHED MODEL LOADING ====================
+# ==================== MODEL LOADING ====================
 
 @st.cache_resource
-def load_model() -> Tuple[Optional[DepthEstimator], str]:
+def load_model() -> Tuple[Optional[DepthEstimator], str, bool]:
     """
     Load and cache the depth estimation model.
     
     Returns:
-        Tuple of (DepthEstimator instance, device string)
+        Tuple containing:
+            - DepthEstimator instance (or None if failed)
+            - Device string (e.g., 'cuda' or 'cpu')
+            - Boolean indicating success
     """
     estimator = DepthEstimator()
     
     if estimator.load_model():
-        st.success(f"✅ Model loaded successfully on {estimator.device}")
-        return estimator, str(estimator.device)
-    else:
-        st.error(f"❌ Failed to load model from {estimator.model_path}")
-        return None, str(estimator.device)
+        return estimator, str(estimator.device), True
+    return None, str(estimator.device), False
 
 
 # ==================== TAB IMPLEMENTATIONS ====================
-
-def render_sample_images_tab(estimator: DepthEstimator, colormap: str) -> None:
-    """Render the sample images tab content."""
-    st.header("📷 Sample Images")
-    st.markdown("Test the depth estimation model with sample images from the repository.")
-    
-    # Look for sample images
-    sample_dir = os.path.dirname(os.path.abspath(__file__))
-    sample_images = [f for f in os.listdir(sample_dir) 
-                     if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-    
-    if not sample_images:
-        st.info("No sample images found. Add .jpg or .png files to the SLAM directory.")
-        return
-    
-    selected_image = st.selectbox("Select a sample image", sample_images)
-    
-    if st.button("🔍 Analyze Sample", key="btn_sample"):
-        image_path = os.path.join(sample_dir, selected_image)
-        image = Image.open(image_path).convert("RGB")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Original Image")
-            st.image(image, use_container_width=True)
-        
-        with col2:
-            st.subheader("Depth Map")
-            with st.spinner("Predicting depth..."):
-                depth_map = estimator.estimate_depth(image)
-                depth_colored = colorize_depth(depth_map, colormap)
-            st.image(depth_colored, use_container_width=True)
-
 
 def render_upload_image_tab(estimator: DepthEstimator, colormap: str) -> None:
     """Render the upload image tab content."""
@@ -242,23 +201,25 @@ def render_webcam_tab(
 ) -> None:
     """Render the laptop webcam tab content."""
     st.header("💻 Live Depth from Laptop Webcam")
-    st.markdown("Use your laptop's built-in webcam for real-time depth estimation.")
     
-    # Camera selection
-    camera_index = st.selectbox(
-        "Select Camera",
-        [0, 1, 2],
-        format_func=lambda x: f"Camera {x}" + (" (Default)" if x == 0 else ""),
-        index=0,
-        key="webcam_camera_select"
-    )
+    # Inline controls row
+    col_cam, col_btn1, col_btn2 = st.columns([2, 1, 1])
     
-    # Control buttons
-    col_btn1, col_btn2 = st.columns(2)
+    with col_cam:
+        camera_index = st.selectbox(
+            "Select Camera",
+            [0, 1, 2],
+            format_func=lambda x: f"Camera {x}" + (" (Default)" if x == 0 else ""),
+            index=0,
+            key="webcam_camera_select",
+            label_visibility="collapsed"
+        )
+    
     with col_btn1:
-        start_webcam = st.button("▶️ Start Webcam", key="start_webcam_btn")
+        start_webcam = st.button("▶️ Start", key="start_webcam_btn", use_container_width=True)
+    
     with col_btn2:
-        stop_webcam = st.button("⏹️ Stop Webcam", key="stop_webcam_btn")
+        stop_webcam = st.button("⏹️ Stop", key="stop_webcam_btn", use_container_width=True)
     
     # Session state for webcam
     if 'webcam_running' not in st.session_state:
@@ -342,18 +303,22 @@ def render_phone_camera_tab(
     3. Start the server on the phone and enter the IP address below.
     """)
     
-    cam_url = st.text_input(
-        "Camera URL", 
-        "http://192.168.1.XX:8080/video",
-        help="Example: http://192.168.1.100:8080/video"
-    )
+    # Inline controls row
+    col_url, col_btn1, col_btn2 = st.columns([2, 1, 1])
     
-    # Control buttons
-    col_pbtn1, col_pbtn2 = st.columns(2)
-    with col_pbtn1:
-        start_phone = st.button("▶️ Start Phone Camera", key="start_phone_btn")
-    with col_pbtn2:
-        stop_phone = st.button("⏹️ Stop Phone Camera", key="stop_phone_btn")
+    with col_url:
+        cam_url = st.text_input(
+            "Camera URL", 
+            "http://192.168.1.XX:8080/video",
+            help="Example: http://192.168.1.100:8080/video",
+            label_visibility="collapsed"
+        )
+    
+    with col_btn1:
+        start_phone = st.button("▶️ Start", key="start_phone_btn", use_container_width=True)
+    
+    with col_btn2:
+        stop_phone = st.button("⏹️ Stop", key="stop_phone_btn", use_container_width=True)
     
     # Session state
     if 'phone_running' not in st.session_state:
@@ -604,47 +569,50 @@ end_header
 
 def render_about_tab() -> None:
     """Render the about tab content."""
-    st.header("About This Application")
+    st.header("ℹ️ About")
+    
     st.markdown("""
-    ### Model Architecture
+    ### 🏗️ Model Architecture
+    
     This depth estimation model uses a **ResNet-152** backbone as an encoder 
-    with a custom decoder featuring skip connections.
+    with a custom decoder featuring skip connections (U-Net style).
     
-    **Key Features:**
-    - **Encoder**: ResNet-152 for feature extraction
-    - **Decoder**: Custom upsampling blocks with skip connections
-    - **Output**: Depth map scaled to 0-10 meters
+    | Component | Description |
+    |-----------|-------------|
+    | **Encoder** | ResNet-152 pretrained backbone |
+    | **Decoder** | 4 upsampling blocks with skip connections |
+    | **Output** | Single-channel depth map (0-10 meters) |
     
-    ### 3D Reconstruction Pipeline
-    The 3D reconstruction feature implements:
-    1. **Depth Prediction (Section II)**: ResNet-152 encoder-decoder network
-    2. **Similarity-Based Filter (Section III)**: Denoising using surface normals
-    3. **Point Cloud Generation (Section IV)**: Back-projection using pinhole camera model
+    ### 🔄 3D Reconstruction Pipeline
     
-    ### Available Features
-    - **Sample Images**: Test with pre-loaded images
-    - **Upload Image**: Process your own images
-    - **Upload Video**: Process video files with depth estimation
-    - **3D Reconstruction**: Generate interactive point clouds
-    - **Laptop Webcam**: Real-time depth from built-in camera
-    - **Phone Camera**: Stream from IP Webcam app
+    1. **Depth Prediction**: ResNet-152 encoder-decoder network
+    2. **Similarity-Based Filter**: Denoising using surface normals  
+    3. **Point Cloud Generation**: Back-projection using pinhole camera model
     
-    ### Performance Tips
+    ### ✨ Features
+    
+    | Feature | Description |
+    |---------|-------------|
+    | 📤 Upload Image | Process single images |
+    | 🎬 Upload Video | Frame-by-frame video processing |
+    | 🌐 3D Reconstruction | Interactive point cloud visualization |
+    | 💻 Laptop Webcam | Real-time depth from built-in camera |
+    | 📱 Phone Camera | Stream via IP Webcam app |
+    
+    ### ⚡ Performance Tips
+    
     - Use **360p** resolution for fastest processing
-    - GPU acceleration is enabled when CUDA is available
+    - GPU acceleration is automatic when CUDA is available
     - Lower resolution = Higher FPS
     - For 3D reconstruction, use "Medium" quality for best balance
     
-    ### Technology Stack
-    - **PyTorch**: Deep learning framework
-    - **Streamlit**: Web application framework
-    - **Plotly**: Interactive 3D visualization
-    - **OpenCV**: Computer vision library
-    - **ResNet-152**: Backbone architecture
+    ### 🛠️ Technology Stack
+    
+    `PyTorch` · `Streamlit` · `Plotly` · `OpenCV` · `NumPy`
     """)
     
     st.markdown("---")
-    st.markdown("Built with ❤️ using Streamlit and PyTorch")
+    st.caption("Built with ❤️ by Mridul Bansal | MIT License")
 
 
 # ==================== MAIN APPLICATION ====================
@@ -657,65 +625,185 @@ def main() -> None:
         page_icon=config.PAGE_ICON,
         layout=config.PAGE_LAYOUT
     )
-    
-    # Header
-    st.title("🔭 Monocular Depth Estimation")
-    st.markdown("### ResNet-152 Based Depth Estimation Model")
-    
-    # Sidebar - Settings
-    st.sidebar.header("⚙️ Settings")
-    colormap = st.sidebar.selectbox(
-        "Depth Colormap",
-        config.COLORMAPS,
-        index=config.COLORMAPS.index(config.DEFAULT_COLORMAP)
-    )
-    
+    """
+    # :material/ev_shadow_add: Monocular Depth Estimation
+    Resnet-152 Based Depth Estimation Model.
+    """
+    # Custom CSS for modern UI styling
+    st.markdown("""
+        <style>
+        /* Tab container - segmented control style */
+        .stTabs [data-baseweb="tab-list"] {
+            background-color: #0f172b;
+            border-radius: 30px;
+            padding: 5px;
+            gap: 0px;
+            display: inline-flex;
+            width: auto;
+            border: 1px solid #314158;
+        }
+        
+        /* Individual tab styling */
+        .stTabs [data-baseweb="tab"] {
+            background-color: transparent;
+            border-radius: 25px;
+            padding: 10px 18px;
+            border: none;
+            font-weight: 400;
+            font-size: 14px;
+            color: #e2e8f0;
+            transition: all 0.2s ease;
+            margin: 0;
+        }
+        
+        /* Hover state */
+        .stTabs [data-baseweb="tab"]:hover {
+            background-color: rgba(97, 95, 255, 0.15);
+        }
+        
+        /* Active/Selected tab - highlighted chip inside */
+        .stTabs [aria-selected="true"] {
+            background-color: #615fff !important;
+            color: #e2e8f0 !important;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(97, 95, 255, 0.4);
+        }
+        
+        /* Remove default tab highlight/border */
+        .stTabs [data-baseweb="tab-highlight"] {
+            display: none;
+        }
+        
+        .stTabs [data-baseweb="tab-border"] {
+            display: none;
+        }
+        
+        /* Small chip-style status badge */
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .status-chip.success {
+            background-color: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        .status-chip.error {
+            background-color: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .status-chip.info {
+            background-color: rgba(97, 95, 255, 0.15);
+            color: #615fff;
+            border: 1px solid rgba(97, 95, 255, 0.3);
+        }
+        
+        /* Compact file uploader */
+        .stFileUploader {
+            max-width: 400px;
+        }
+        
+        .stFileUploader > div {
+            padding: 1rem;
+        }
+        
+        /* Compact select boxes */
+        .stSelectbox {
+            max-width: 300px;
+        }
+        
+        /* Compact radio buttons */
+        .stRadio > div {
+            flex-direction: row;
+            gap: 1rem;
+        }
+        
+        /* Settings page specific styling */
+        .settings-container {
+            max-width: 600px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     # Load model
     with st.spinner("Loading model..."):
-        estimator, device = load_model()
+        estimator, device, model_loaded = load_model()
     
     if estimator is None:
-        st.error("Failed to load the model. Please check the model path.")
+        st.markdown('<span class="status-chip error">❌ Failed to load model</span>', unsafe_allow_html=True)
         return
     
-    st.sidebar.info(f"🖥️ Device: {device}")
-    
-    # Sidebar - Live Stream Quality
-    st.sidebar.subheader("📹 Live Stream Quality")
-    resolution = st.sidebar.selectbox(
-        "Resolution",
-        list(config.RESOLUTION_PRESETS.keys()),
-        index=list(config.RESOLUTION_PRESETS.keys()).index(config.DEFAULT_RESOLUTION)
-    )
-    target_resolution = config.RESOLUTION_PRESETS[resolution]
+    # Initialize session state for settings
+    if 'colormap' not in st.session_state:
+        st.session_state.colormap = config.DEFAULT_COLORMAP
+    if 'resolution' not in st.session_state:
+        st.session_state.resolution = config.DEFAULT_RESOLUTION
     
     # Main tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "📷 Sample Images",
         "📤 Upload Image", 
         "🎬 Upload Video",
         "🌐 3D Reconstruction",
         "💻 Laptop Webcam",
         "📱 Phone Camera",
+        "⚙️ Settings",
         "ℹ️ About"
     ])
     
-    with tab1:
-        render_sample_images_tab(estimator, colormap)
+    # Settings tab - render first to get values
+    with tab6:
+        st.header("⚙️ Settings")
+        
+        # Inline settings row
+        col1, col2, col3 = st.columns([1, 1, 1])
+        
+        with col1:
+            colormap = st.selectbox(
+                "🎨 Colormap",
+                config.COLORMAPS,
+                index=config.COLORMAPS.index(st.session_state.colormap),
+                help="Color scheme for depth visualization"
+            )
+            st.session_state.colormap = colormap
+        
+        with col2:
+            resolution = st.selectbox(
+                "📹 Resolution",
+                list(config.RESOLUTION_PRESETS.keys()),
+                index=list(config.RESOLUTION_PRESETS.keys()).index(st.session_state.resolution),
+                help="Live stream resolution"
+            )
+            st.session_state.resolution = resolution
+        
+        with col3:
+            st.markdown("**System**")
+            res = config.RESOLUTION_PRESETS[resolution]
+            res_text = f"{res[0]}x{res[1]}" if res else "Native"
+            st.markdown(f'<span class="status-chip info">🖥️ {device} • {res_text}</span>', unsafe_allow_html=True)
     
-    with tab2:
+    # Get current settings
+    colormap = st.session_state.colormap
+    target_resolution = config.RESOLUTION_PRESETS[st.session_state.resolution]
+    
+    with tab1:
         render_upload_image_tab(estimator, colormap)
     
-    with tab3:
+    with tab2:
         render_upload_video_tab(estimator, colormap)
     
-    with tab4:
+    with tab3:
         render_3d_reconstruction_tab(estimator, colormap)
     
-    with tab5:
+    with tab4:
         render_webcam_tab(estimator, colormap, target_resolution)
     
-    with tab6:
+    with tab5:
         render_phone_camera_tab(estimator, colormap, target_resolution)
     
     with tab7:
